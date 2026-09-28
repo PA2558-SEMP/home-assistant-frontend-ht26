@@ -4,9 +4,7 @@ import {
   mdiDelete,
   mdiDeleteSweep,
   mdiDotsVertical,
-  mdiDragHorizontalVariant,
   mdiPlus,
-  mdiSort,
 } from "@mdi/js";
 import {
   addDays,
@@ -107,8 +105,6 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
   @state() private _entityId?: string;
 
   @state() private _items?: TodoItem[];
-
-  @state() private _reordering = false;
 
   @query("ha-input", true) private _input!: HaInput;
 
@@ -415,14 +411,12 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
       memoTime
     );
 
-    const reorderableItems = this._reordering
-      ? this._getUncheckedAndItemsWithoutStatus(
-          this._items,
-          this._config.display_order,
-          this._config.due_date_period,
-          memoTime
-        )
-      : undefined;
+    const reorderableItems = this._getUncheckedAndItemsWithoutStatus(
+      this._items,
+      this._config.display_order,
+      this._config.due_date_period,
+      memoTime
+    );
 
     return html`
       <ha-card
@@ -462,74 +456,25 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
         <ha-sortable
           handle-selector="ha-svg-icon"
           draggable-selector=".draggable"
-          .disabled=${!this._reordering}
           @item-moved=${this._itemMoved}
         >
           <ha-list wrapFocus multi>
             ${
-              !this._items
-                ? nothing
-                : !uncheckedItems.length && !itemsWithoutStatus.length
+              this._items
+                ? !uncheckedItems.length && !itemsWithoutStatus.length
                   ? html`<p class="empty">
                       ${this.hass.localize(
                         "ui.panel.lovelace.cards.todo-list.no_unchecked_items"
                       )}
                     </p>`
-                  : this._reordering
-                    ? html`<div class="header" role="separator">
-                          <h2>
-                            ${this.hass!.localize(
-                              "ui.panel.lovelace.cards.todo-list.reorder_items"
-                            )}
-                          </h2>
-                          ${this._renderMenu(this._config, unavailable)}
-                        </div>
-                        ${this._renderItems(reorderableItems ?? [], unavailable)}`
-                    : nothing
-            }
-            ${
-              !this._reordering && uncheckedItems.length
-                ? html`
-                    ${
-                      !this._config.hide_section_headers
-                        ? html`<div class="header">
-                            <h2>
-                              ${this.hass!.localize(
-                                "ui.panel.lovelace.cards.todo-list.unchecked_items"
-                              )}
-                            </h2>
-                            ${this._renderMenu(this._config, unavailable)}
-                          </div>`
-                        : nothing
-                    }
-                    ${this._renderItems(uncheckedItems, unavailable)}
-                  `
-                : nothing
-            }
-            ${
-              !this._reordering && itemsWithoutStatus.length
-                ? html`
-                    <div>
-                      ${
-                        uncheckedItems.length
-                          ? html`<div class="divider" role="separator"></div>`
-                          : nothing
-                      }
-                      <div class="header" role="separator">
+                  : html`<div class="header" role="separator">
                         <h2>
                           ${this.hass!.localize(
-                            "ui.panel.lovelace.cards.todo-list.no_status_items"
+                            "ui.panel.lovelace.cards.todo-list.reorder_items"
                           )}
                         </h2>
-                        ${
-                          !uncheckedItems.length
-                            ? this._renderMenu(this._config, unavailable)
-                            : nothing
-                        }
                       </div>
-                    </div>
-                    ${this._renderItems(itemsWithoutStatus, unavailable)}
-                  `
+                      ${this._renderItems(reorderableItems ?? [], unavailable)}`
                 : nothing
             }
             ${
@@ -587,30 +532,6 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     `;
   }
 
-  private _renderMenu(config: TodoListCardConfig, _unavailable: boolean) {
-    return (!config.display_order ||
-      config.display_order === TodoSortMode.NONE) &&
-      this._todoListSupportsFeature(TodoListEntityFeature.MOVE_TODO_ITEM)
-      ? html`<ha-dropdown
-          @wa-select=${this._handlePrimaryMenuSelect}
-          placement="bottom-end"
-        >
-          <ha-icon-button
-            slot="trigger"
-            .path=${mdiDotsVertical}
-          ></ha-icon-button>
-          <ha-dropdown-item value="reorder">
-            ${this.hass!.localize(
-              this._reordering
-                ? "ui.panel.lovelace.cards.todo-list.exit_reorder_items"
-                : "ui.panel.lovelace.cards.todo-list.reorder_items"
-            )}
-            <ha-svg-icon slot="icon" .path=${mdiSort}> </ha-svg-icon>
-          </ha-dropdown-item>
-        </ha-dropdown>`
-      : nothing;
-  }
-
   private _getDueDate(item: TodoItem): Date | undefined {
     return item.due
       ? item.due.includes("T")
@@ -625,22 +546,16 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
         items,
         (item) => item.uid,
         (item) => {
-          const showDelete =
-            this._todoListSupportsFeature(
-              TodoListEntityFeature.DELETE_TODO_ITEM
-            ) &&
-            !this._todoListSupportsFeature(
-              TodoListEntityFeature.UPDATE_TODO_ITEM
-            );
-          const showReorder =
-            item.status !== TodoItemStatus.Completed && this._reordering;
+          const showReorder = item.status !== TodoItemStatus.Completed;
           const due = this._getDueDate(item);
           const today =
             due && !item.due!.includes("T") && isSameDay(new Date(), due);
           return html`
             <ha-check-list-item
               left
-              .hasMeta=${showReorder || showDelete}
+              .hasMeta=${showReorder}
+              show-drag-and-drop
+              .dragAndDropAltText=${this.hass!.localize("ui.panel.lovelace.cards.todo-list.drag_and_drop")}
               class="editRow ${classMap({
                 draggable: item.status !== TodoItemStatus.Completed,
                 completed: item.status === TodoItemStatus.Completed,
@@ -691,33 +606,17 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
                     : nothing
                 }
               </div>
-              ${
-                showReorder
-                  ? html`
-                      <ha-svg-icon
-                        .title=${this.hass!.localize(
-                          "ui.panel.lovelace.cards.todo-list.drag_and_drop"
-                        )}
-                        class="reorderButton handle"
-                        .path=${mdiDragHorizontalVariant}
-                        slot="meta"
-                      >
-                      </ha-svg-icon>
-                    `
-                  : showDelete
-                    ? html`<ha-icon-button
-                        .title=${this.hass!.localize(
-                          "ui.panel.lovelace.cards.todo-list.delete_item"
-                        )}
-                        class="deleteItemButton"
-                        .path=${mdiDelete}
-                        .itemId=${item.uid}
-                        slot="meta"
-                        @click=${this._deleteItem}
-                      >
-                      </ha-icon-button>`
-                    : nothing
-              }
+              <ha-icon-button
+                .title=${this.hass!.localize(
+                  "ui.panel.lovelace.cards.todo-list.delete_item"
+                )}
+                class="deleteItemButton"
+                .path=${mdiDelete}
+                .itemId=${item.uid}
+                slot="meta"
+                @click=${this._deleteItem}
+              >
+              </ha-icon-button>
             </ha-check-list-item>
           `;
         }
@@ -889,16 +788,6 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     if (ev.key === "Enter") {
       this._addItem(null);
     }
-  }
-
-  private _handlePrimaryMenuSelect(ev: HaDropdownSelectEvent) {
-    if (ev.detail?.item?.value === "reorder") {
-      this._toggleReorder();
-    }
-  }
-
-  private _toggleReorder() {
-    this._reordering = !this._reordering;
   }
 
   private async _itemMoved(ev: CustomEvent) {

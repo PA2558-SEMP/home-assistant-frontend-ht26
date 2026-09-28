@@ -9283,8 +9283,6 @@
             "clear_items": "Remove completed items",
             "add_item": "Add item",
             "today": "Today",
-            "reorder_items": "Reorder items",
-            "exit_reorder_items": "Exit reorder mode",
             "drag_and_drop": "Drag and drop",
             "delete_item": "Delete item",
             "delete_confirm_title": "Remove completed items?",
