@@ -971,10 +971,10 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     }
 
     .deleteItemButton {
-      position: relative;
-      left: 8px;
-      inset-inline-start: 8px;
-      inset-inline-end: initial;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      --ha-icon-button-after-margin: 8px;
     }
 
     ha-input {
