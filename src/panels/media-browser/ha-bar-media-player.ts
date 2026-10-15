@@ -6,6 +6,8 @@ import {
   mdiPlayPause,
   mdiStop,
   mdiVolumeHigh,
+  mdiHeart,
+  mdiHeartOutline,
 } from "@mdi/js";
 import type { PropertyValues } from "lit";
 import { LitElement, css, html, nothing } from "lit";
@@ -80,6 +82,8 @@ export class BarMediaPlayer extends SubscribeMixin(LitElement) {
 
   @state() private _browserPlayer?: BrowserMediaPlayer;
 
+  @state() private _isFavorite = false;
+
   private _volumeValue = 0;
 
   private _progressController = new MediaProgressController(this, {
@@ -104,6 +108,10 @@ export class BarMediaPlayer extends SubscribeMixin(LitElement) {
       this._volumeValue = value;
     },
   });
+
+  private _toggleFavorite() {
+    this._isFavorite = !this._isFavorite;
+  }
 
   public disconnectedCallback(): void {
     super.disconnectedCallback();
@@ -248,6 +256,14 @@ export class BarMediaPlayer extends SubscribeMixin(LitElement) {
             ? html`<ha-spinner></ha-spinner> `
             : html`
                 <div class="controls">
+                  <ha-icon-button
+                    .path=${this._isFavorite ? mdiHeart : mdiHeartOutline}
+                    .label=${
+                    this._isFavorite ? "Remove favorite" : "Add to favorites"
+                  }
+                    aria-pressed=${this._isFavorite ? "true" : "false"}
+                    @click=${this._toggleFavorite}
+                  ></ha-icon-button>
                   ${
                     controls === undefined
                       ? ""
