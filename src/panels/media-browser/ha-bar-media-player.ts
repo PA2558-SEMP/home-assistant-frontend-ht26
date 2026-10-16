@@ -6,6 +6,7 @@ import {
   mdiPlayPause,
   mdiStop,
   mdiVolumeHigh,
+  mdiShuffle,
 } from "@mdi/js";
 import type { PropertyValues } from "lit";
 import { LitElement, css, html, nothing } from "lit";
@@ -248,6 +249,10 @@ export class BarMediaPlayer extends SubscribeMixin(LitElement) {
             ? html`<ha-spinner></ha-spinner> `
             : html`
                 <div class="controls">
+                  <ha-icon-button
+                    .path=${mdiShuffle}
+                    .label=${this.hass.localize("ui.card.media_player.shuffle")}
+                  ></ha-icon-button>
                   ${
                     controls === undefined
                       ? ""
