@@ -549,7 +549,9 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
         items,
         (item) => item.uid,
         (item) => {
-          const showReorder = item.status !== TodoItemStatus.Completed;
+          const showReorder =
+            item.status !== TodoItemStatus.Completed &&
+            this._todoListSupportsFeature(TodoListEntityFeature.MOVE_TODO_ITEM);
           const due = this._getDueDate(item);
           const today =
             due && !item.due!.includes("T") && isSameDay(new Date(), due);
@@ -615,8 +617,8 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
                 )
                   ? html`<ha-icon-button
                       .title=${this.hass!.localize(
-                    "ui.panel.lovelace.cards.todo-list.delete_item"
-                  )}
+                        "ui.panel.lovelace.cards.todo-list.delete_item"
+                      )}
                       class="deleteItemButton hoverReveal"
                       .path=${mdiDelete}
                       .itemId=${item.uid}
