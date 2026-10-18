@@ -470,22 +470,15 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
         >
           <ha-list wrapFocus multi>
             ${
-              this._items
-                ? !uncheckedItems.length && !itemsWithoutStatus.length
-                  ? html`<p class="empty">
-                      ${this.hass.localize(
-                        "ui.panel.lovelace.cards.todo-list.no_unchecked_items"
-                      )}
-                    </p>`
-                  : html`<div class="header" role="separator">
-                        <h2>
-                          ${this.hass!.localize(
-                            "ui.panel.lovelace.cards.todo-list.reorder_items"
-                          )}
-                        </h2>
-                      </div>
-                      ${this._renderItems(reorderableItems ?? [], unavailable)}`
-                : nothing
+              this._items &&
+              !uncheckedItems.length &&
+              !itemsWithoutStatus.length
+                ? html`<p class="empty">
+                    ${this.hass.localize(
+                      "ui.panel.lovelace.cards.todo-list.no_unchecked_items"
+                    )}
+                  </p>`
+                : this._renderItems(reorderableItems ?? [], unavailable)
             }
             ${
               !this._config.hide_completed && checkedItems.length
