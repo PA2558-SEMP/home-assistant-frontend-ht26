@@ -78,9 +78,9 @@ const UNDO_DELAY = 4000;
 @customElement("hui-todo-list-card")
 export class HuiTodoListCard extends LitElement implements LovelaceCard {
   private _pendingDeletes = new Map<
-  string,
-  { timer: number; row: HTMLElement | null }
->();
+    string,
+    { timer: number; row: HTMLElement | null }
+  >();
   public static async getConfigElement(): Promise<LovelaceCardEditor> {
     await import("../editor/config-elements/hui-todo-list-editor");
     return document.createElement("hui-todo-list-card-editor");
@@ -131,9 +131,9 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
   disconnectedCallback(): void {
     super.disconnectedCallback();
     [...this._pendingDeletes.keys()].forEach((uid) => {
-  clearTimeout(this._pendingDeletes.get(uid)?.timer);
-  this._commitDelete(uid);
-});
+      clearTimeout(this._pendingDeletes.get(uid)?.timer);
+      this._commitDelete(uid);
+    });
     this._unsubItems?.then((unsub) => unsub());
     this._unsubItems = undefined;
     this._clearRefreshTimer();
@@ -563,8 +563,8 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
           return html`
             <ha-check-list-item
               left
-              .hasMeta=${showReorder}
-              show-drag-and-drop
+              hasMeta
+              .showDragAndDrop=${showReorder}
               .dragAndDropAltText=${this.hass!.localize("ui.panel.lovelace.cards.todo-list.drag_and_drop")}
               class="editRow ${classMap({
                 draggable: item.status !== TodoItemStatus.Completed,
@@ -786,60 +786,60 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     }
   }
 
-private _deleteItem(ev): void {
-  ev.stopPropagation();
-  const item = this._getItem(ev.target.itemId);
-  if (!item || this._pendingDeletes.has(item.uid)) {
-    return;
+  private _deleteItem(ev): void {
+    ev.stopPropagation();
+    const item = this._getItem(ev.target.itemId);
+    if (!item || this._pendingDeletes.has(item.uid)) {
+      return;
+    }
+    const uid = item.uid;
+
+    // hide the row right away
+    const row = (ev.target as HTMLElement).closest(
+      "ha-check-list-item"
+    ) as HTMLElement | null;
+    if (row) {
+      row.style.display = "none";
+    }
+
+    // really delete after 4 seconds, unless Undo is clicked
+    const timer = window.setTimeout(() => this._commitDelete(uid), UNDO_DELAY);
+    this._pendingDeletes.set(uid, { timer, row });
+
+    showToast(this, {
+      message: this.hass!.localize("ui.common.successfully_deleted"),
+      duration: UNDO_DELAY,
+      action: {
+        text: this.hass!.localize("ui.common.undo"),
+        action: () => this._undoDelete(uid),
+      },
+    });
   }
-  const uid = item.uid;
 
-  // hide the row right away
-  const row = (ev.target as HTMLElement).closest(
-    "ha-check-list-item"
-  ) as HTMLElement | null;
-  if (row) {
-    row.style.display = "none";
-  }
-
-  // really delete after 4 seconds, unless Undo is clicked
-  const timer = window.setTimeout(() => this._commitDelete(uid), UNDO_DELAY);
-  this._pendingDeletes.set(uid, { timer, row });
-
-  showToast(this, {
-    message: this.hass!.localize("ui.common.successfully_deleted"),
-    duration: UNDO_DELAY,
-    action: {
-      text: this.hass!.localize("ui.common.undo"),
-      action: () => this._undoDelete(uid),
-    },
-  });
-}
-
-private _undoDelete(uid: string): void {
-  const pending = this._pendingDeletes.get(uid);
-  if (!pending) {
-    return;
-  }
-  clearTimeout(pending.timer);
-  this._pendingDeletes.delete(uid);
-  if (pending.row) {
-    pending.row.style.display = "";
-  }
-}
-
-private async _commitDelete(uid: string): Promise<void> {
-  const pending = this._pendingDeletes.get(uid);
-  this._pendingDeletes.delete(uid);
-  try {
-    await deleteItems(this.hass!, this._entityId!, [uid]);
-  } catch (_err) {
-    // delete failed, so show the row again
-    if (pending?.row) {
+  private _undoDelete(uid: string): void {
+    const pending = this._pendingDeletes.get(uid);
+    if (!pending) {
+      return;
+    }
+    clearTimeout(pending.timer);
+    this._pendingDeletes.delete(uid);
+    if (pending.row) {
       pending.row.style.display = "";
     }
   }
-}
+
+  private async _commitDelete(uid: string): Promise<void> {
+    const pending = this._pendingDeletes.get(uid);
+    this._pendingDeletes.delete(uid);
+    try {
+      await deleteItems(this.hass!, this._entityId!, [uid]);
+    } catch (_err) {
+      // delete failed, so show the row again
+      if (pending?.row) {
+        pending.row.style.display = "";
+      }
+    }
+  }
 
   private _addKeyPress(ev): void {
     if (ev.key === "Enter") {
@@ -1028,16 +1028,16 @@ private async _commitDelete(uid: string): Promise<void> {
     }
 
     @media (hover: hover) {
-  .hoverReveal {
-    opacity: 0;
-    transition: opacity 0.15s ease-in-out;
-  }
-  ha-check-list-item:hover .hoverReveal,
-  ha-check-list-item:focus-within .hoverReveal,
-  .hoverReveal:focus-visible {
-    opacity: 1;
-  }
-}
+      .hoverReveal {
+        opacity: 0;
+        transition: opacity 0.15s ease-in-out;
+      }
+      ha-check-list-item:hover .hoverReveal,
+      ha-check-list-item:focus-within .hoverReveal,
+      .hoverReveal:focus-visible {
+        opacity: 1;
+      }
+    }
     .deleteItemButton {
       display: flex;
       align-items: center;
