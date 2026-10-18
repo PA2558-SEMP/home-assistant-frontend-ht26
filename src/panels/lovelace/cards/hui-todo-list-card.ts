@@ -609,17 +609,23 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
                     : nothing
                 }
               </div>
-              <ha-icon-button
-                .title=${this.hass!.localize(
-                  "ui.panel.lovelace.cards.todo-list.delete_item"
-                )}
-                class="deleteItemButton hoverReveal"
-                .path=${mdiDelete}
-                .itemId=${item.uid}
-                slot="meta"
-                @click=${this._deleteItem}
-              >
-              </ha-icon-button>
+              ${
+                this._todoListSupportsFeature(
+                  TodoListEntityFeature.DELETE_TODO_ITEM
+                )
+                  ? html`<ha-icon-button
+                      .title=${this.hass!.localize(
+                    "ui.panel.lovelace.cards.todo-list.delete_item"
+                  )}
+                      class="deleteItemButton hoverReveal"
+                      .path=${mdiDelete}
+                      .itemId=${item.uid}
+                      slot="meta"
+                      @click=${this._deleteItem}
+                    >
+                    </ha-icon-button>`
+                  : nothing
+              }
             </ha-check-list-item>
           `;
         }
