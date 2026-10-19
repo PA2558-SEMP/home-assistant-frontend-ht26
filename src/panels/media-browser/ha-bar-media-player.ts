@@ -5,9 +5,10 @@ import {
   mdiPlay,
   mdiPlayPause,
   mdiStop,
-  mdiVolumeHigh,
+  mdiVolumeHigh,  
   mdiHeart,
   mdiHeartOutline,
+  mdiShuffle,
 } from "@mdi/js";
 import type { PropertyValues } from "lit";
 import { LitElement, css, html, nothing } from "lit";
@@ -260,9 +261,13 @@ export class BarMediaPlayer extends SubscribeMixin(LitElement) {
                     .path=${this._isFavorite ? mdiHeart : mdiHeartOutline}
                     .label=${
                     this._isFavorite ? "Remove favorite" : "Add to favorites"
-                  }
+                    }
                     aria-pressed=${this._isFavorite ? "true" : "false"}
                     @click=${this._toggleFavorite}
+                  ></ha-icon-button>
+                  <ha-icon-button
+                    .path=${mdiShuffle}
+                    .label=${this.hass.localize("ui.card.media_player.shuffle")}
                   ></ha-icon-button>
                   ${
                     controls === undefined
