@@ -871,13 +871,16 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     return item;
   }
 
-  private async _moveItem(oldIndex: number, newIndex: number) {
+  private async _moveItem(
+    oldIndex: number,
+    newIndex: number,
+    parentUid?: string | null
+    // for parentUid, undefined = keep current parent, null = make top-level, string = new parent
+  ) {
     await this.updateComplete;
 
     const list = this._list!;
-
     const items = list.children;
-
     const itemId = (items[oldIndex] as any).itemId as string;
 
     const prevItemId = (
@@ -888,9 +891,17 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
       ) as any
     )?.itemId;
 
+    let parent_uid: string | undefined;
+    if (parentUid === undefined) {
+      parent_uid = this._getItem(itemId)?.parent_uid ?? undefined;
+    } else {
+      parent_uid = parentUid ?? undefined;
+    }
+
     // Optimistic change
     const itemIndex = this._items!.findIndex((itm) => itm.uid === itemId);
     const item = this._items!.splice(itemIndex, 1)[0];
+    item.parent_uid = parent_uid ?? null;
 
     if (!prevItemId) {
       this._items!.unshift(item);
@@ -900,7 +911,7 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     }
     this._items = [...this._items!];
 
-    await moveItem(this.hass!, this._entityId!, itemId, prevItemId);
+    await moveItem(this.hass!, this._entityId!, itemId, prevItemId, parent_uid);
   }
 
   static styles = css`
