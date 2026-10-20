@@ -256,14 +256,23 @@ export class BarMediaPlayer extends SubscribeMixin(LitElement) {
             ? html`<ha-spinner></ha-spinner> `
             : html`
                 <div class="controls">
-                  <ha-icon-button
-                    .path=${this._isFavorite ? mdiHeart : mdiHeartOutline}
-                    .label=${
-                    this._isFavorite ? "Remove favorite" : "Add to favorites"
-                  }
-                    aria-pressed=${this._isFavorite ? "true" : "false"}
-                    @click=${this._toggleFavorite}
+                ${
+                  this._stateObj.state === "playing"
+                    ? html`
+                        <ha-icon-button
+                          .path=${this._isFavorite ? mdiHeart : mdiHeartOutline}
+                          .label=${
+                          this._isFavorite
+                            ? "Remove favorite"
+                            : "Add to favorites"
+                        }
+                          aria-pressed=${this._isFavorite ? "true" : "false"}
+                        ></ha-icon-button>
+                      `
+                    : ""
+                }
                   ></ha-icon-button>
+                }
                   ${
                     controls === undefined
                       ? ""
