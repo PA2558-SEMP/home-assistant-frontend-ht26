@@ -132,7 +132,7 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     super.disconnectedCallback();
     [...this._pendingDeletes.keys()].forEach((uid) => {
       clearTimeout(this._pendingDeletes.get(uid)?.timer);
-      this._commitDelete(uid);
+      void this._commitDelete(uid);
     });
     this._unsubItems?.then((unsub) => unsub());
     this._unsubItems = undefined;
