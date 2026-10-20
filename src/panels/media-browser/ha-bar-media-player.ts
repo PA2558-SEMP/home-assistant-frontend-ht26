@@ -258,14 +258,22 @@ export class BarMediaPlayer extends SubscribeMixin(LitElement) {
             ? html`<ha-spinner></ha-spinner> `
             : html`
                 <div class="controls">
-                  <ha-icon-button
-                    .path=${this._isFavorite ? mdiHeart : mdiHeartOutline}
-                    .label=${
-                      this._isFavorite ? "Remove favorite" : "Add to favorites"
-                    }
-                    aria-pressed=${this._isFavorite ? "true" : "false"}
-                    @click=${this._toggleFavorite}
-                  ></ha-icon-button>
+                  ${
+                    this._stateObj.state === "playing"
+                      ? html`
+                          <ha-icon-button
+                            .path=${this._isFavorite ? mdiHeart : mdiHeartOutline}
+                            .label=${
+                              this._isFavorite
+                                ? "Remove favorite"
+                                : "Add to favorites"
+                            }
+                            aria-pressed=${this._isFavorite ? "true" : "false"}
+                            @click=${this._toggleFavorite}
+                          ></ha-icon-button>
+                        `
+                      : ""
+                  }
                   <ha-icon-button
                     .path=${mdiShuffle}
                     .label=${this.hass.localize("ui.card.media_player.shuffle")}
@@ -349,8 +357,8 @@ export class BarMediaPlayer extends SubscribeMixin(LitElement) {
   ) {
     const isBrowser = this.entityId === BROWSER_PLAYER;
     return html`
-    <div class="choose-player ${isBrowser ? "browser" : ""}">
-      ${
+      <div class="choose-player ${isBrowser ? "browser" : ""}">
+        ${
         !this.narrow &&
         stateObj &&
         supportsFeature(stateObj, MediaPlayerEntityFeature.VOLUME_SET)
@@ -385,14 +393,14 @@ export class BarMediaPlayer extends SubscribeMixin(LitElement) {
           : ""
       }
 
-          <ha-media-player-picker
-            class="player-menu"
-            .value=${this.entityId}
-            @value-changed=${this._handlePlayerSelect}
-          >
-            <ha-button slot="field">
-              <span slot="start">${this._renderIcon(isBrowser, stateObj)}</span>
-              ${
+        <ha-media-player-picker
+          class="player-menu"
+          .value=${this.entityId}
+          @value-changed=${this._handlePlayerSelect}
+        >
+          <ha-button slot="field">
+            <span slot="start">${this._renderIcon(isBrowser, stateObj)}</span>
+            ${
                 isBrowser
                   ? this.hass.localize(
                       "ui.components.media-browser.web-browser"
@@ -414,12 +422,10 @@ export class BarMediaPlayer extends SubscribeMixin(LitElement) {
                       })()
                     : this.entityId
               }
-              <ha-svg-icon slot="end" .path=${mdiChevronDown}></ha-svg-icon>
-            </ha-button>
-          </ha-media-player-picker>
-        </div>
+            <ha-svg-icon slot="end" .path=${mdiChevronDown}></ha-svg-icon>
+          </ha-button>
+        </ha-media-player-picker>
       </div>
-
     `;
   }
 
