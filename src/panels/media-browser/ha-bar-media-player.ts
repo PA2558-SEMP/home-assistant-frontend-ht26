@@ -5,7 +5,7 @@ import {
   mdiPlay,
   mdiPlayPause,
   mdiStop,
-  mdiVolumeHigh,  
+  mdiVolumeHigh,
   mdiHeart,
   mdiHeartOutline,
   mdiShuffle,
@@ -62,6 +62,7 @@ import { BrowserMediaPlayer } from "./browser-media-player";
 declare global {
   interface HASSDomEvents {
     "player-picked": { entityId: string };
+    "random-station-requested": undefined;
   }
 }
 
@@ -260,7 +261,7 @@ export class BarMediaPlayer extends SubscribeMixin(LitElement) {
                   <ha-icon-button
                     .path=${this._isFavorite ? mdiHeart : mdiHeartOutline}
                     .label=${
-                    this._isFavorite ? "Remove favorite" : "Add to favorites"
+                      this._isFavorite ? "Remove favorite" : "Add to favorites"
                     }
                     aria-pressed=${this._isFavorite ? "true" : "false"}
                     @click=${this._toggleFavorite}
@@ -268,6 +269,7 @@ export class BarMediaPlayer extends SubscribeMixin(LitElement) {
                   <ha-icon-button
                     .path=${mdiShuffle}
                     .label=${this.hass.localize("ui.card.media_player.shuffle")}
+                    @click=${this._handleRandomClick}
                   ></ha-icon-button>
                   ${
                     controls === undefined
@@ -566,6 +568,10 @@ export class BarMediaPlayer extends SubscribeMixin(LitElement) {
     if (this._marqueeActive) {
       this._marqueeActive = false;
     }
+  }
+
+  private _handleRandomClick(): void {
+    fireEvent(this, "random-station-requested");
   }
 
   private _handlePlayerSelect(ev: HASSDomEvent<{ value: string }>): void {
