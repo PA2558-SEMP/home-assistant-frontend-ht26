@@ -75,16 +75,14 @@ interface TodoDueDatePeriod {
 }
 
 const UNDO_DELAY = 4000;
-const NESTING_DRAG_THRESHOLD = 24;
-const NESTING_DRAG_TOAST_ID = "todo-list-nesting-drag";
+
 @customElement("hui-todo-list-card")
 export class HuiTodoListCard extends LitElement implements LovelaceCard {
   private _pendingDeletes = new Map<
     string,
-    { timer: number; row: HTMLElement | null }
+    { timer: number; rows: HTMLElement[]; uids: string[] }
   >();
-  private _previewDirection?: "root" | "previous";
-  private _previewTarget?: HTMLElement;
+
   public static async getConfigElement(): Promise<LovelaceCardEditor> {
     await import("../editor/config-elements/hui-todo-list-editor");
     return document.createElement("hui-todo-list-card-editor");
@@ -161,7 +159,6 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
   }
 
   protected getEntityId(): string | undefined {
-    // not implemented, todo list should always have an entity id set;
     return undefined;
   }
 
@@ -395,7 +392,6 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     const unavailable =
       stateObj.state === UNAVAILABLE || stateObj.state === UNKNOWN;
 
-    // Discard memoization when we rollover to a new day, so filters can be recalculated
     const memoTime = this._config.due_date_period
       ? calcDate(
           new Date(),
@@ -471,9 +467,6 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
           handle-selector="ha-svg-icon"
           draggable-selector=".draggable"
           @item-moved=${this._itemMoved}
-          @item-dragged=${this._itemDragged}
-          @item-dragging=${this._itemDragging}
-          @drag-end=${this._clearNestingPreview}
         >
           <ha-list wrapFocus multi>
             ${
@@ -560,10 +553,15 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
       ${repeat(
         items,
         (item) => item.uid,
-        (item) => {
+        (item, index) => {
           const showReorder =
             item.status !== TodoItemStatus.Completed &&
             this._todoListSupportsFeature(TodoListEntityFeature.MOVE_TODO_ITEM);
+          const canNestUnderPrevious =
+            showReorder &&
+            !item.parent_uid &&
+            !this._hasChildren(item.uid) &&
+            index > 0;
           const due = this._getDueDate(item);
           const today =
             due && !item.due!.includes("T") && isSameDay(new Date(), due);
@@ -600,7 +598,32 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
               @keydown=${this._handleKeydown}
             >
               <div class="column">
-                <span class="summary">${item.summary}</span>
+                <div class="summaryRow">
+                  <span class="summary">${item.summary}</span>
+                  ${
+                    showReorder && item.parent_uid
+                      ? html`<ha-icon-button
+                          .label=${this.hass!.localize(
+                            "ui.panel.lovelace.cards.todo-list.move_to_top_level"
+                          )}
+                          class="nestingButton hoverReveal"
+                          .itemId=${item.uid}
+                          @click=${this._changeItemNesting}
+                          >←</ha-icon-button
+                        >`
+                      : canNestUnderPrevious
+                        ? html`<ha-icon-button
+                            .label=${this.hass!.localize(
+                              "ui.panel.lovelace.cards.todo-list.make_subtask"
+                            )}
+                            class="nestingButton hoverReveal"
+                            .itemId=${item.uid}
+                            @click=${this._changeItemNesting}
+                            >→</ha-icon-button
+                          >`
+                        : nothing
+                  }
+                </div>
                 ${
                   item.description
                     ? html`<ha-markdown-element
@@ -701,6 +724,53 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     return this._items?.find((item) => item.uid === itemId);
   }
 
+  private _hasChildren(itemId: string): boolean {
+    return Boolean(this._items?.some((item) => item.parent_uid === itemId));
+  }
+
+  private _getItemAndDescendantUids(itemUids: string[]): string[] {
+    const uids = new Set(itemUids);
+    let addedItems = true;
+
+    while (addedItems) {
+      addedItems = false;
+      for (const item of this._items ?? []) {
+        if (
+          item.parent_uid &&
+          uids.has(item.parent_uid) &&
+          !uids.has(item.uid)
+        ) {
+          uids.add(item.uid);
+          addedItems = true;
+        }
+      }
+    }
+
+    return [...uids];
+  }
+
+  private _getNestingParent(
+    itemId: string,
+    previousItemId: string
+  ): TodoItem | undefined {
+    const item = this._getItem(itemId);
+    if (!item || item.parent_uid || this._hasChildren(itemId)) {
+      return undefined;
+    }
+
+    const itemsByUid = new Map(this._items?.map((it) => [it.uid, it]));
+    const previousItem = itemsByUid.get(previousItemId);
+    if (!previousItem) {
+      return undefined;
+    }
+
+    const parent = previousItem.parent_uid
+      ? itemsByUid.get(previousItem.parent_uid)
+      : previousItem;
+
+    return parent?.uid === itemId ? undefined : parent;
+  }
+
   private _requestSelected(ev: Event): void {
     ev.stopPropagation();
   }
@@ -781,7 +851,9 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
       return;
     }
     const checkedItems = this._getCheckedItems(this._items);
-    const uids = checkedItems.map((item: TodoItem) => item.uid);
+    const uids = this._getItemAndDescendantUids(
+      checkedItems.map((item: TodoItem) => item.uid)
+    );
     showConfirmationDialog(this, {
       title: this.hass.localize(
         "ui.panel.lovelace.cards.todo-list.delete_confirm_title"
@@ -830,23 +902,24 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
 
   private _deleteItem(ev): void {
     ev.stopPropagation();
-    const item = this._getItem(ev.target.itemId);
+    const item = this._getItem((ev.currentTarget as any).itemId);
     if (!item || this._pendingDeletes.has(item.uid)) {
       return;
     }
     const uid = item.uid;
-
-    // hide the row right away
-    const row = (ev.target as HTMLElement).closest(
-      "ha-check-list-item"
-    ) as HTMLElement | null;
-    if (row) {
+    const uids = this._getItemAndDescendantUids([uid]);
+    const deletedUids = new Set(uids);
+    const rows = Array.from(
+      this._list?.querySelectorAll<HTMLElement>("ha-check-list-item") ?? []
+    ).filter((row) =>
+      deletedUids.has((row as HTMLElement & { itemId: string }).itemId)
+    );
+    for (const row of rows) {
       row.style.display = "none";
     }
 
-    // really delete after 4 seconds, unless Undo is clicked
     const timer = window.setTimeout(() => this._commitDelete(uid), UNDO_DELAY);
-    this._pendingDeletes.set(uid, { timer, row });
+    this._pendingDeletes.set(uid, { timer, rows, uids });
 
     showToast(this, {
       message: this.hass!.localize("ui.common.successfully_deleted"),
@@ -865,20 +938,22 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     }
     clearTimeout(pending.timer);
     this._pendingDeletes.delete(uid);
-    if (pending.row) {
-      pending.row.style.display = "";
+    for (const row of pending.rows) {
+      row.style.display = "";
     }
   }
 
   private async _commitDelete(uid: string): Promise<void> {
     const pending = this._pendingDeletes.get(uid);
+    if (!pending) {
+      return;
+    }
     this._pendingDeletes.delete(uid);
     try {
-      await deleteItems(this.hass!, this._entityId!, [uid]);
+      await deleteItems(this.hass!, this._entityId!, pending.uids);
     } catch (_err) {
-      // delete failed, so show the row again
-      if (pending?.row) {
-        pending.row.style.display = "";
+      for (const row of pending.rows) {
+        row.style.display = "";
       }
     }
   }
@@ -889,86 +964,33 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     }
   }
 
-  private async _itemMoved(ev: CustomEvent) {
+  private _itemMoved(ev: CustomEvent) {
     ev.stopPropagation();
-    const { oldIndex, newIndex, deltaX } = ev.detail;
-    const nesting =
-      deltaX <= -NESTING_DRAG_THRESHOLD
-        ? "root"
-        : deltaX >= NESTING_DRAG_THRESHOLD
-          ? "previous"
-          : "preserve";
-    this._moveItem(oldIndex, newIndex, nesting);
+    const { oldIndex, newIndex } = ev.detail;
+    this._moveItem(oldIndex, newIndex);
   }
 
-  private _itemDragged(ev: CustomEvent) {
+  private _changeItemNesting(ev: Event): void {
     ev.stopPropagation();
-    const { oldIndex, newIndex, deltaX } = ev.detail;
-    if (deltaX <= -NESTING_DRAG_THRESHOLD) {
-      this._moveItem(oldIndex, newIndex, "root");
-    } else if (deltaX >= NESTING_DRAG_THRESHOLD) {
-      this._moveItem(oldIndex, newIndex, "previous");
-    }
-  }
-
-  private _itemDragging(ev: CustomEvent) {
-    const { item, deltaX } = ev.detail as {
-      item: HTMLElement;
-      deltaX: number;
-    };
-    const direction =
-      deltaX <= -NESTING_DRAG_THRESHOLD
-        ? "root"
-        : deltaX >= NESTING_DRAG_THRESHOLD
-          ? "previous"
-          : undefined;
-    const target =
-      direction === "previous" &&
-      item.previousElementSibling?.localName === "ha-check-list-item"
-        ? (item.previousElementSibling as HTMLElement)
-        : undefined;
-
+    const itemId = (ev.currentTarget as any).itemId as string;
+    const item = this._getItem(itemId);
+    const listItems = this._list?.children;
     if (
-      direction === this._previewDirection &&
-      target === this._previewTarget
+      !item ||
+      !listItems ||
+      (!item.parent_uid && this._hasChildren(itemId))
     ) {
       return;
     }
 
-    this._previewDirection = direction;
-    this._previewTarget = target;
-    if (!direction || (direction === "previous" && !target)) {
-      this._closeNestingToast();
+    const itemIndex = Array.from(listItems).findIndex(
+      (listItem) => (listItem as any).itemId === itemId
+    );
+    if (itemIndex < 0) {
       return;
     }
 
-    showToast(this, {
-      id: NESTING_DRAG_TOAST_ID,
-      duration: 60_000,
-      message:
-        direction === "root"
-          ? { translationKey: "ui.panel.lovelace.cards.todo-list.drag_to_root" }
-          : {
-              translationKey: "ui.panel.lovelace.cards.todo-list.drag_to_nest",
-              args: {
-                task: this._getItem((target as any).itemId)?.summary ?? "",
-              },
-            },
-    });
-  }
-
-  private _clearNestingPreview = () => {
-    this._previewDirection = undefined;
-    this._previewTarget = undefined;
-    this._closeNestingToast();
-  };
-
-  private _closeNestingToast() {
-    showToast(this, {
-      id: NESTING_DRAG_TOAST_ID,
-      message: "",
-      duration: 0,
-    });
+    this._moveItem(itemIndex, itemIndex, item.parent_uid ? "root" : "previous");
   }
 
   private _findFirstItem(
@@ -1007,14 +1029,18 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
       ) as any
     )?.itemId;
 
+    const currentItem = this._getItem(itemId);
+    const nestingParent =
+      nesting === "previous" && prevItemId
+        ? this._getNestingParent(itemId, prevItemId)
+        : undefined;
     const parent_uid =
-      nesting === "root"
+      nesting === "root" && currentItem?.parent_uid
         ? undefined
         : nesting === "previous"
-          ? prevItemId
-          : (this._getItem(itemId)?.parent_uid ?? undefined);
+          ? (nestingParent?.uid ?? currentItem?.parent_uid ?? undefined)
+          : (currentItem?.parent_uid ?? undefined);
 
-    // Optimistic change
     const itemIndex = this._items!.findIndex((itm) => itm.uid === itemId);
     const item = this._items!.splice(itemIndex, 1)[0];
     item.parent_uid = parent_uid ?? null;
@@ -1094,6 +1120,17 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
       justify-content: space-between;
     }
 
+    .summaryRow {
+      display: flex;
+      align-items: center;
+      gap: var(--ha-space-2);
+    }
+
+    .summaryRow .summary {
+      flex: 1;
+      min-width: 0;
+    }
+
     .multiline .column {
       display: flex;
       flex-direction: column;
@@ -1149,7 +1186,7 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     }
 
     .handle {
-      cursor: move; /* fallback if grab cursor is unsupported */
+      cursor: move;
       cursor: grab;
       height: 24px;
       padding: 0 4px;
@@ -1166,11 +1203,17 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
         opacity: 1;
       }
     }
+
     .deleteItemButton {
       display: flex;
       align-items: center;
       justify-content: center;
       --ha-icon-button-after-margin: 8px;
+    }
+
+    .nestingButton {
+      --ha-icon-button-size: 32px;
+      font-weight: bold;
     }
 
     ha-input {
