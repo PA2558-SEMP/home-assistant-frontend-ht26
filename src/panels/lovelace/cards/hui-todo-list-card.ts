@@ -163,33 +163,75 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
   }
 
   private _sortItems(items: TodoItem[], sort?: string) {
-    if (sort === TodoSortMode.ALPHA_ASC || sort === TodoSortMode.ALPHA_DESC) {
-      const sortOrder = sort === TodoSortMode.ALPHA_ASC ? 1 : -1;
-      return items.sort(
-        (a, b) =>
+    const itemsByUid = new Map(items.map((item) => [item.uid, item]));
+    const childrenByParent = new Map<string | null, TodoItem[]>();
+
+    for (const item of items) {
+      const parentUid =
+        item.parent_uid && itemsByUid.has(item.parent_uid)
+          ? item.parent_uid
+          : null;
+      const siblings = childrenByParent.get(parentUid) ?? [];
+      siblings.push(item);
+      childrenByParent.set(parentUid, siblings);
+    }
+
+    const sortOrder =
+      sort === TodoSortMode.ALPHA_ASC || sort === TodoSortMode.DUEDATE_ASC
+        ? 1
+        : -1;
+    const compareItems = (a: TodoItem, b: TodoItem): number => {
+      if (sort === TodoSortMode.ALPHA_ASC || sort === TodoSortMode.ALPHA_DESC) {
+        return (
           sortOrder *
           caseInsensitiveStringCompare(
             a.summary,
             b.summary,
             this.hass?.locale.language
           )
-      );
-    }
-    if (
-      sort === TodoSortMode.DUEDATE_ASC ||
-      sort === TodoSortMode.DUEDATE_DESC
-    ) {
-      const sortOrder = sort === TodoSortMode.DUEDATE_ASC ? 1 : -1;
-      return items.sort((a, b) => {
+        );
+      }
+      if (
+        sort === TodoSortMode.DUEDATE_ASC ||
+        sort === TodoSortMode.DUEDATE_DESC
+      ) {
         const aDue = this._getDueDate(a) ?? Infinity;
         const bDue = this._getDueDate(b) ?? Infinity;
         if (aDue === bDue) {
           return 0;
         }
         return aDue < bDue ? -sortOrder : sortOrder;
-      });
+      }
+      return 0;
+    };
+
+    if (sort) {
+      for (const siblings of childrenByParent.values()) {
+        siblings.sort(compareItems);
+      }
     }
-    return items;
+
+    const sortedItems: TodoItem[] = [];
+    const visitedUids = new Set<string>();
+    const appendWithChildren = (item: TodoItem): void => {
+      if (visitedUids.has(item.uid)) {
+        return;
+      }
+      visitedUids.add(item.uid);
+      sortedItems.push(item);
+      for (const child of childrenByParent.get(item.uid) ?? []) {
+        appendWithChildren(child);
+      }
+    };
+
+    for (const item of childrenByParent.get(null) ?? []) {
+      appendWithChildren(item);
+    }
+    for (const item of items) {
+      appendWithChildren(item);
+    }
+
+    return sortedItems;
   }
 
   private _getUncheckedAndItemsWithoutStatus = memoizeOne(
@@ -525,7 +567,7 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
                           : nothing
                       }
                     </div>
-                    ${this._renderItems(checkedItems, unavailable)}
+                    ${this._renderItems(checkedItems, unavailable, true)}
                   `
                 : nothing
             }
@@ -543,7 +585,11 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
       : undefined;
   }
 
-  private _renderItems(items: TodoItem[], unavailable = false) {
+  private _renderItems(
+    items: TodoItem[],
+    unavailable = false,
+    showParentContext = false
+  ) {
     const visibleItemUids = new Set(items.map((item) => item.uid));
     const itemsByUid = new Map<string, TodoItem>(
       this._items?.map((item) => [item.uid, item])
@@ -554,14 +600,14 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
         items,
         (item) => item.uid,
         (item, index) => {
+          const parent = item.parent_uid
+            ? itemsByUid.get(item.parent_uid)
+            : undefined;
           const showReorder =
             item.status !== TodoItemStatus.Completed &&
             this._todoListSupportsFeature(TodoListEntityFeature.MOVE_TODO_ITEM);
           const canNestUnderPrevious =
-            showReorder &&
-            !item.parent_uid &&
-            !this._hasChildren(item.uid) &&
-            index > 0;
+            showReorder && !item.parent_uid && index > 0;
           const due = this._getDueDate(item);
           const today =
             due && !item.due!.includes("T") && isSameDay(new Date(), due);
@@ -600,6 +646,13 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
               <div class="column">
                 <div class="summaryRow">
                   <span class="summary">${item.summary}</span>
+                  ${
+                    showParentContext && parent
+                      ? html`<span class="parentContext"
+                          >${parent.summary}</span
+                        >`
+                      : nothing
+                  }
                   ${
                     showReorder && item.parent_uid
                       ? html`<ha-icon-button
@@ -724,10 +777,6 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     return this._items?.find((item) => item.uid === itemId);
   }
 
-  private _hasChildren(itemId: string): boolean {
-    return Boolean(this._items?.some((item) => item.parent_uid === itemId));
-  }
-
   private _getItemAndDescendantUids(itemUids: string[]): string[] {
     const uids = new Set(itemUids);
     let addedItems = true;
@@ -754,7 +803,7 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     previousItemId: string
   ): TodoItem | undefined {
     const item = this._getItem(itemId);
-    if (!item || item.parent_uid || this._hasChildren(itemId)) {
+    if (!item || item.parent_uid) {
       return undefined;
     }
 
@@ -768,7 +817,8 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
       ? itemsByUid.get(previousItem.parent_uid)
       : previousItem;
 
-    return parent?.uid === itemId ? undefined : parent;
+    const descendantUids = new Set(this._getItemAndDescendantUids([itemId]));
+    return parent && !descendantUids.has(parent.uid) ? parent : undefined;
   }
 
   private _requestSelected(ev: Event): void {
@@ -825,14 +875,21 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     if (!item) {
       return;
     }
-    await updateItem(this.hass!, this._entityId!, {
-      uid: item.uid,
-      summary: item.summary,
-      status:
-        item.status === TodoItemStatus.NeedsAction
-          ? TodoItemStatus.Completed
-          : TodoItemStatus.NeedsAction,
-    });
+    const status =
+      item.status === TodoItemStatus.NeedsAction
+        ? TodoItemStatus.Completed
+        : TodoItemStatus.NeedsAction;
+    const affectedUids = new Set(this._getItemAndDescendantUids([item.uid]));
+    const affectedItems = (this._items ?? [item]).filter(
+      (todoItem) => affectedUids.has(todoItem.uid) && todoItem.status !== status
+    );
+    for (const todoItem of affectedItems) {
+      await updateItem(this.hass!, this._entityId!, {
+        uid: todoItem.uid,
+        summary: todoItem.summary,
+        status,
+      });
+    }
     if (focusedIndex !== undefined && list) {
       await this.updateComplete;
       await list.updateComplete;
@@ -975,11 +1032,7 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     const itemId = (ev.currentTarget as any).itemId as string;
     const item = this._getItem(itemId);
     const listItems = this._list?.children;
-    if (
-      !item ||
-      !listItems ||
-      (!item.parent_uid && this._hasChildren(itemId))
-    ) {
+    if (!item || !listItems) {
       return;
     }
 
@@ -1015,7 +1068,9 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     newIndex: number,
     nesting: "preserve" | "root" | "previous" = "preserve"
   ) {
-    await this.updateComplete;
+    if (nesting === "preserve" || this.isUpdatePending) {
+      await this.updateComplete;
+    }
 
     const list = this._list!;
     const items = list.children;
@@ -1041,9 +1096,27 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
           ? (nestingParent?.uid ?? currentItem?.parent_uid ?? undefined)
           : (currentItem?.parent_uid ?? undefined);
 
+    const movedUids = new Set(
+      nesting === "previous"
+        ? this._getItemAndDescendantUids([itemId])
+        : [itemId]
+    );
+
     const itemIndex = this._items!.findIndex((itm) => itm.uid === itemId);
     const item = this._items!.splice(itemIndex, 1)[0];
     item.parent_uid = parent_uid ?? null;
+
+    if (nesting === "previous") {
+      for (const descendantUid of movedUids) {
+        if (descendantUid === itemId) {
+          continue;
+        }
+        const descendant = this._getItem(descendantUid);
+        if (descendant) {
+          descendant.parent_uid = parent_uid ?? null;
+        }
+      }
+    }
 
     if (!prevItemId) {
       this._items!.unshift(item);
@@ -1051,9 +1124,24 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
       const prevIndex = this._items!.findIndex((itm) => itm.uid === prevItemId);
       this._items!.splice(prevIndex + 1, 0, item);
     }
-    this._items = [...this._items!];
+    this._items = this._sortItems(this._items!);
 
-    await moveItem(this.hass!, this._entityId!, itemId, prevItemId, parent_uid);
+    for (const movedItem of this._items.filter((itm) =>
+      movedUids.has(itm.uid)
+    )) {
+      const movedItemIndex = this._items.findIndex(
+        (itm) => itm.uid === movedItem.uid
+      );
+      const previousUid =
+        movedItemIndex > 0 ? this._items[movedItemIndex - 1].uid : undefined;
+      await moveItem(
+        this.hass!,
+        this._entityId!,
+        movedItem.uid,
+        previousUid,
+        parent_uid
+      );
+    }
   }
 
   static styles = css`
@@ -1131,6 +1219,14 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
       min-width: 0;
     }
 
+    .parentContext {
+      flex: 0 1 auto;
+      max-width: 45%;
+      min-width: 0;
+      justify-content: flex-end;
+      text-align: end;
+    }
+
     .multiline .column {
       display: flex;
       flex-direction: column;
@@ -1143,7 +1239,8 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     }
 
     .description,
-    .due {
+    .due,
+    .parentContext {
       font-size: var(--ha-font-size-s);
       color: var(--secondary-text-color);
     }
@@ -1165,7 +1262,9 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
       color: var(--primary-color);
     }
 
-    .due {
+    .description,
+    .due,
+    .parentContext {
       display: flex;
       align-items: center;
     }

@@ -9288,6 +9288,7 @@
             "drag_to_root": "Release to move this task to the top level.",
             "make_subtask": "Make subtask",
             "move_to_top_level": "Move to top level",
+            "parent_task": "({task})",
             "delete_item": "Delete item",
             "delete_confirm_title": "Remove completed items?",
             "delete_confirm_text": "{number} {number, plural,\n  one {item}\n  other {items}\n} will be permanently removed from the to-do list."
