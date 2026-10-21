@@ -611,6 +611,18 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
           const due = this._getDueDate(item);
           const today =
             due && !item.due!.includes("T") && isSameDay(new Date(), due);
+          const dueLabelContent = today
+            ? this.hass!.localize("ui.panel.lovelace.cards.todo-list.today")
+            : html`<ha-relative-time
+                capitalize
+                .datetime=${due}
+              ></ha-relative-time>`;
+          const dueLabel = due
+            ? html`<div class="due ${due < new Date() ? "overdue" : ""}">
+                <ha-svg-icon .path=${mdiClock}></ha-svg-icon>${dueLabelContent}
+              </div>`
+            : nothing;
+
           let nestingButton = nothing;
           if (showReorder && item.parent_uid) {
             nestingButton = html`
@@ -688,24 +700,7 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
                       ></ha-markdown-element>`
                     : nothing
                 }
-                ${
-                  due
-                    ? html`<div
-                        class="due ${due < new Date() ? "overdue" : ""}"
-                      >
-                        <ha-svg-icon .path=${mdiClock}></ha-svg-icon>${
-                          today
-                            ? this.hass!.localize(
-                                "ui.panel.lovelace.cards.todo-list.today"
-                              )
-                            : html`<ha-relative-time
-                                capitalize
-                                .datetime=${due}
-                              ></ha-relative-time>`
-                        }
-                      </div>`
-                    : nothing
-                }
+                ${dueLabel}
               </div>
               ${
                 this._todoListSupportsFeature(
