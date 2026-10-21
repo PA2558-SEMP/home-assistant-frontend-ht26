@@ -802,22 +802,15 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     previousItemId: string
   ): TodoItem | undefined {
     const item = this._getItem(itemId);
-    if (!item || item.parent_uid) {
+    const previousItem = this._getItem(previousItemId);
+
+    if (!item || item.parent_uid || !previousItem) {
       return undefined;
     }
 
-    const itemsByUid = new Map(this._items?.map((it) => [it.uid, it]));
-    const previousItem = itemsByUid.get(previousItemId);
-    if (!previousItem) {
-      return undefined;
-    }
-
-    const parent = previousItem.parent_uid
-      ? itemsByUid.get(previousItem.parent_uid)
+    return previousItem.parent_uid
+      ? this._getItem(previousItem.parent_uid)
       : previousItem;
-
-    const descendantUids = new Set(this._getItemAndDescendantUids([itemId]));
-    return parent && !descendantUids.has(parent.uid) ? parent : undefined;
   }
 
   private _requestSelected(ev: Event): void {
@@ -1094,36 +1087,22 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
       nesting === "previous" && prevItemId
         ? this._getNestingParent(itemId, prevItemId)
         : undefined;
-    let parent_uid: string | undefined;
-
-    if (nesting === "root" && currentItem?.parent_uid) {
+    let parent_uid = currentItem?.parent_uid ?? undefined;
+    if (nesting === "root") {
       parent_uid = undefined;
     } else if (nesting === "previous") {
       parent_uid = nestingParent?.uid ?? currentItem?.parent_uid ?? undefined;
-    } else {
-      parent_uid = currentItem?.parent_uid ?? undefined;
     }
-
-    const movedUids = new Set(
-      nesting === "previous"
-        ? this._getItemAndDescendantUids([itemId])
-        : [itemId]
-    );
 
     const itemIndex = this._items!.findIndex((itm) => itm.uid === itemId);
     const item = this._items!.splice(itemIndex, 1)[0];
     item.parent_uid = parent_uid ?? null;
-
-    if (nesting === "previous") {
-      for (const descendantUid of movedUids) {
-        if (descendantUid === itemId) {
-          continue;
-        }
-        const descendant = this._getItem(descendantUid);
-        if (descendant) {
-          descendant.parent_uid = parent_uid ?? null;
-        }
-      }
+    const flattenedItems =
+      nesting === "previous"
+        ? this._items!.filter((itm) => itm.parent_uid === itemId)
+        : [];
+    for (const flattenedItem of flattenedItems) {
+      flattenedItem.parent_uid = parent_uid ?? null;
     }
 
     if (!prevItemId) {
@@ -1135,25 +1114,20 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     this._items = this._sortItems(this._items!);
 
     await Promise.all(
-      this._items
-        .filter((itm) => movedUids.has(itm.uid))
-        .map(async (movedItem) => {
-          const movedItemIndex = this._items!.findIndex(
-            (itm) => itm.uid === movedItem.uid
-          );
-          const previousUid =
-            movedItemIndex > 0
-              ? this._items![movedItemIndex - 1].uid
-              : undefined;
-          // If using Array.prototype.map:
-          return await moveItem(
-            this.hass!,
-            this._entityId!,
-            movedItem.uid,
-            previousUid,
-            parent_uid
-          );
-        })
+      [item, ...flattenedItems].map((movedItem) => {
+        const movedItemIndex = this._items!.findIndex(
+          (itm) => itm.uid === movedItem.uid
+        );
+        const previousUid =
+          movedItemIndex > 0 ? this._items![movedItemIndex - 1].uid : undefined;
+        return moveItem(
+          this.hass!,
+          this._entityId!,
+          movedItem.uid,
+          previousUid,
+          movedItem.parent_uid ?? undefined
+        );
+      })
     );
   }
 
