@@ -567,7 +567,7 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
                           : nothing
                       }
                     </div>
-                    ${this._renderItems(checkedItems, unavailable, true)}
+                    ${this._renderItems(checkedItems, unavailable, false)}
                   `
                 : nothing
             }
@@ -884,11 +884,15 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
       (todoItem) => affectedUids.has(todoItem.uid) && todoItem.status !== status
     );
     for (const todoItem of affectedItems) {
-      await updateItem(this.hass!, this._entityId!, {
-        uid: todoItem.uid,
-        summary: todoItem.summary,
-        status,
-      });
+      await Promise.all(
+        items.map((todoItem) =>
+          updateItem(this.hass!, this._entityId!, {
+            uid: todoItem.uid,
+            summary: todoItem.summary,
+            status,
+          })
+        )
+      );
     }
     if (focusedIndex !== undefined && list) {
       await this.updateComplete;
@@ -1134,12 +1138,17 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
       );
       const previousUid =
         movedItemIndex > 0 ? this._items[movedItemIndex - 1].uid : undefined;
-      await moveItem(
-        this.hass!,
-        this._entityId!,
-        movedItem.uid,
-        previousUid,
-        parent_uid
+      // If using Array.prototype.map:
+      await Promise.all(
+        items.map((movedItem) =>
+          moveItem(
+            this.hass!,
+            this._entityId!,
+            movedItem.uid,
+            previousUid,
+            parent_uid
+          )
+        )
       );
     }
   }
