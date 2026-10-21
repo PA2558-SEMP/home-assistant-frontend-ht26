@@ -18,7 +18,7 @@ import {
   isSameDay,
 } from "date-fns";
 import type { UnsubscribeFunc } from "home-assistant-js-websocket";
-import type { PropertyValues } from "lit";
+import type { PropertyValues, TemplateResult } from "lit";
 import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, query, state } from "lit/decorators";
 import { classMap } from "lit/directives/class-map";
@@ -624,7 +624,7 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
               </div>`
             : nothing;
 
-          let nestingButton = nothing;
+          let nestingButton: TemplateResult | typeof nothing = nothing;
           if (showReorder && item.parent_uid) {
             nestingButton = html`
               <ha-icon-button
