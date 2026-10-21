@@ -1067,7 +1067,7 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     oldIndex: number,
     newIndex: number,
     nesting: "preserve" | "root" | "previous" = "preserve"
-  ) {
+  ): Promise<void> {
     if (nesting === "preserve" || this.isUpdatePending) {
       await this.updateComplete;
     }
