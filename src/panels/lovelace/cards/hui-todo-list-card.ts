@@ -609,6 +609,7 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
           const canNestUnderPrevious =
             showReorder && !item.parent_uid && index > 0;
           const due = this._getDueDate(item);
+          const overdueText = due && due < new Date() ? "overdue" : "";
           const today =
             due && !item.due!.includes("T") && isSameDay(new Date(), due);
           const dueLabelContent = today
@@ -618,7 +619,7 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
                 .datetime=${due}
               ></ha-relative-time>`;
           const dueLabel = due
-            ? html`<div class="due ${due < new Date() ? "overdue" : ""}">
+            ? html`<div class="due ${overdueText}">
                 <ha-svg-icon .path=${mdiClock}></ha-svg-icon>${dueLabelContent}
               </div>`
             : nothing;
