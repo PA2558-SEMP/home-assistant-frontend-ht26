@@ -75,12 +75,16 @@ interface TodoDueDatePeriod {
 }
 
 const UNDO_DELAY = 4000;
+const NESTING_DRAG_THRESHOLD = 24;
+const NESTING_DRAG_TOAST_ID = "todo-list-nesting-drag";
 @customElement("hui-todo-list-card")
 export class HuiTodoListCard extends LitElement implements LovelaceCard {
   private _pendingDeletes = new Map<
     string,
     { timer: number; row: HTMLElement | null }
   >();
+  private _previewDirection?: "root" | "previous";
+  private _previewTarget?: HTMLElement;
   public static async getConfigElement(): Promise<LovelaceCardEditor> {
     await import("../editor/config-elements/hui-todo-list-editor");
     return document.createElement("hui-todo-list-card-editor");
@@ -467,6 +471,9 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
           handle-selector="ha-svg-icon"
           draggable-selector=".draggable"
           @item-moved=${this._itemMoved}
+          @item-dragged=${this._itemDragged}
+          @item-dragging=${this._itemDragging}
+          @drag-end=${this._clearNestingPreview}
         >
           <ha-list wrapFocus multi>
             ${
@@ -544,6 +551,11 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
   }
 
   private _renderItems(items: TodoItem[], unavailable = false) {
+    const visibleItemUids = new Set(items.map((item) => item.uid));
+    const itemsByUid = new Map<string, TodoItem>(
+      this._items?.map((item) => [item.uid, item])
+    );
+
     return html`
       ${repeat(
         items,
@@ -568,6 +580,11 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
               })}"
               .selected=${item.status === TodoItemStatus.Completed}
               .disabled=${unavailable}
+              style=${this._getItemIndentation(
+                item,
+                visibleItemUids,
+                itemsByUid
+              )}
               .checkboxDisabled=${!this._todoListSupportsFeature(
                 TodoListEntityFeature.UPDATE_TODO_ITEM
               )}
@@ -633,6 +650,30 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
         }
       )}
     `;
+  }
+
+  private _getItemIndentation(
+    item: TodoItem,
+    visibleItemUids: Set<string>,
+    itemsByUid: Map<string, TodoItem>
+  ): string {
+    let depth = 0;
+    let parentUid = item.parent_uid;
+    const visitedUids = new Set([item.uid]);
+
+    while (
+      parentUid &&
+      visibleItemUids.has(parentUid) &&
+      !visitedUids.has(parentUid)
+    ) {
+      visitedUids.add(parentUid);
+      depth++;
+      parentUid = itemsByUid.get(parentUid)?.parent_uid;
+    }
+
+    return depth
+      ? `--mdc-list-side-padding: calc(var(--ha-space-5)${" + var(--ha-space-6)".repeat(depth)})`
+      : "";
   }
 
   private _todoListSupportsFeature(feature: number): boolean {
@@ -850,8 +891,84 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
 
   private async _itemMoved(ev: CustomEvent) {
     ev.stopPropagation();
-    const { oldIndex, newIndex } = ev.detail;
-    this._moveItem(oldIndex, newIndex);
+    const { oldIndex, newIndex, deltaX } = ev.detail;
+    const nesting =
+      deltaX <= -NESTING_DRAG_THRESHOLD
+        ? "root"
+        : deltaX >= NESTING_DRAG_THRESHOLD
+          ? "previous"
+          : "preserve";
+    this._moveItem(oldIndex, newIndex, nesting);
+  }
+
+  private _itemDragged(ev: CustomEvent) {
+    ev.stopPropagation();
+    const { oldIndex, newIndex, deltaX } = ev.detail;
+    if (deltaX <= -NESTING_DRAG_THRESHOLD) {
+      this._moveItem(oldIndex, newIndex, "root");
+    } else if (deltaX >= NESTING_DRAG_THRESHOLD) {
+      this._moveItem(oldIndex, newIndex, "previous");
+    }
+  }
+
+  private _itemDragging(ev: CustomEvent) {
+    const { item, deltaX } = ev.detail as {
+      item: HTMLElement;
+      deltaX: number;
+    };
+    const direction =
+      deltaX <= -NESTING_DRAG_THRESHOLD
+        ? "root"
+        : deltaX >= NESTING_DRAG_THRESHOLD
+          ? "previous"
+          : undefined;
+    const target =
+      direction === "previous" &&
+      item.previousElementSibling?.localName === "ha-check-list-item"
+        ? (item.previousElementSibling as HTMLElement)
+        : undefined;
+
+    if (
+      direction === this._previewDirection &&
+      target === this._previewTarget
+    ) {
+      return;
+    }
+
+    this._previewDirection = direction;
+    this._previewTarget = target;
+    if (!direction || (direction === "previous" && !target)) {
+      this._closeNestingToast();
+      return;
+    }
+
+    showToast(this, {
+      id: NESTING_DRAG_TOAST_ID,
+      duration: 60_000,
+      message:
+        direction === "root"
+          ? { translationKey: "ui.panel.lovelace.cards.todo-list.drag_to_root" }
+          : {
+              translationKey: "ui.panel.lovelace.cards.todo-list.drag_to_nest",
+              args: {
+                task: this._getItem((target as any).itemId)?.summary ?? "",
+              },
+            },
+    });
+  }
+
+  private _clearNestingPreview = () => {
+    this._previewDirection = undefined;
+    this._previewTarget = undefined;
+    this._closeNestingToast();
+  };
+
+  private _closeNestingToast() {
+    showToast(this, {
+      id: NESTING_DRAG_TOAST_ID,
+      message: "",
+      duration: 0,
+    });
   }
 
   private _findFirstItem(
@@ -874,8 +991,7 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
   private async _moveItem(
     oldIndex: number,
     newIndex: number,
-    parentUid?: string | null
-    // for parentUid, undefined = keep current parent, null = make top-level, string = new parent
+    nesting: "preserve" | "root" | "previous" = "preserve"
   ) {
     await this.updateComplete;
 
@@ -887,16 +1003,16 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
       this._findFirstItem(
         items,
         newIndex,
-        newIndex < oldIndex ? "up" : "down"
+        newIndex <= oldIndex ? "up" : "down"
       ) as any
     )?.itemId;
 
-    let parent_uid: string | undefined;
-    if (parentUid === undefined) {
-      parent_uid = this._getItem(itemId)?.parent_uid ?? undefined;
-    } else {
-      parent_uid = parentUid ?? undefined;
-    }
+    const parent_uid =
+      nesting === "root"
+        ? undefined
+        : nesting === "previous"
+          ? prevItemId
+          : (this._getItem(itemId)?.parent_uid ?? undefined);
 
     // Optimistic change
     const itemIndex = this._items!.findIndex((itm) => itm.uid === itemId);
