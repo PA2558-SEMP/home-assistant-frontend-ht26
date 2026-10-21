@@ -883,9 +883,8 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     const affectedItems = (this._items ?? [item]).filter(
       (todoItem) => affectedUids.has(todoItem.uid) && todoItem.status !== status
     );
-    for (const todoItem of affectedItems) {
       await Promise.all(
-        items.map((todoItem) =>
+      affectedItems.map((todoItem) =>
           updateItem(this.hass!, this._entityId!, {
             uid: todoItem.uid,
             summary: todoItem.summary,
@@ -893,7 +892,6 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
           })
         )
       );
-    }
     if (focusedIndex !== undefined && list) {
       await this.updateComplete;
       await list.updateComplete;
@@ -1130,27 +1128,27 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     }
     this._items = this._sortItems(this._items!);
 
-    for (const movedItem of this._items.filter((itm) =>
-      movedUids.has(itm.uid)
-    )) {
-      const movedItemIndex = this._items.findIndex(
+    await Promise.all(
+      this._items
+        .filter((itm) => movedUids.has(itm.uid))
+        .map(async (movedItem) => {
+          const movedItemIndex = this._items!.findIndex(
         (itm) => itm.uid === movedItem.uid
       );
       const previousUid =
-        movedItemIndex > 0 ? this._items[movedItemIndex - 1].uid : undefined;
+            movedItemIndex > 0
+              ? this._items![movedItemIndex - 1].uid
+              : undefined;
       // If using Array.prototype.map:
-      await Promise.all(
-        items.map((movedItem) =>
-          moveItem(
+          return await moveItem(
             this.hass!,
             this._entityId!,
             movedItem.uid,
             previousUid,
             parent_uid
-          )
-        )
+          );
+        })
       );
-    }
   }
 
   static styles = css`
