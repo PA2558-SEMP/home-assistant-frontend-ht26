@@ -1024,7 +1024,7 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
   private _itemMoved(ev: CustomEvent) {
     ev.stopPropagation();
     const { oldIndex, newIndex } = ev.detail;
-    this._moveItem(oldIndex, newIndex);
+    void this._moveItem(oldIndex, newIndex);
   }
 
   private _changeItemNesting(ev: Event): void {
@@ -1043,7 +1043,11 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
       return;
     }
 
-    this._moveItem(itemIndex, itemIndex, item.parent_uid ? "root" : "previous");
+    void this._moveItem(
+      itemIndex,
+      itemIndex,
+      item.parent_uid ? "root" : "previous"
+    );
   }
 
   private _findFirstItem(
