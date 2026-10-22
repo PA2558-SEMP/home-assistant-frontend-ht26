@@ -29,6 +29,7 @@ export interface TodoItem {
   description?: string | null;
   due?: string | null;
   completed?: string | null;
+  parent_uid?: string | null;
 }
 
 export enum TodoListEntityFeature {
@@ -144,11 +145,13 @@ export const moveItem = (
   hass: HomeAssistant,
   entity_id: string,
   uid: string,
-  previous_uid: string | undefined
+  previous_uid: string | undefined,
+  parent_uid: string | undefined
 ): Promise<void> =>
   hass.callWS({
     type: "todo/item/move",
     entity_id,
     uid,
     previous_uid,
+    parent_uid,
   });
