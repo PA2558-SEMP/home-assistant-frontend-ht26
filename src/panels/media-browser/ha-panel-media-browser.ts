@@ -34,6 +34,7 @@ import type {
 import { BROWSER_PLAYER, mediaPlayerPlayMedia } from "../../data/media-player";
 import type { ResolvedMediaSource } from "../../data/media_source";
 import { resolveMediaSource } from "../../data/media_source";
+import { getRandomStation } from "../../data/radio_browser";
 import { showAlertDialog } from "../../dialogs/generic/show-dialog-box";
 import { haStyle } from "../../resources/styles";
 import type { HomeAssistant, Route } from "../../types";
@@ -164,6 +165,7 @@ class PanelMediaBrowser extends LitElement {
         .entityId=${this._entityId}
         .narrow=${this.narrow}
         @player-picked=${this._playerPicked}
+        @random-station-requested=${this._playRandomStation}
       ></ha-bar-media-player>
     `;
   }
@@ -254,6 +256,41 @@ class PanelMediaBrowser extends LitElement {
     navigate(createMediaPanelUrl(this._entityId, ev.detail.ids), {
       replace: ev.detail.replace,
     });
+  }
+
+  private async _playRandomStation(): Promise<void> {
+    try {
+      const station = await getRandomStation(this.hass);
+
+      if (this._entityId !== BROWSER_PLAYER) {
+        await mediaPlayerPlayMedia(
+          this.hass,
+          this._entityId,
+          station.url,
+          station.mime_type
+        );
+        return;
+      }
+
+      const item: MediaPlayerItem = {
+        title: station.name,
+        media_content_id: `media-source://radio_browser/${station.uuid}`,
+        media_content_type: station.mime_type,
+        media_class: "music",
+        can_play: true,
+        can_expand: false,
+        can_search: false,
+      };
+
+      this._player.playItem(item, {
+        url: station.url,
+        mime_type: station.mime_type,
+      });
+    } catch {
+      showAlertDialog(this, {
+        text: this.hass.localize("ui.common.unknown_error"),
+      });
+    }
   }
 
   private async _mediaPicked(

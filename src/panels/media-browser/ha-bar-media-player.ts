@@ -6,6 +6,9 @@ import {
   mdiPlayPause,
   mdiStop,
   mdiVolumeHigh,
+  mdiHeart,
+  mdiHeartOutline,
+  mdiShuffle,
 } from "@mdi/js";
 import type { PropertyValues } from "lit";
 import { LitElement, css, html, nothing } from "lit";
@@ -55,10 +58,16 @@ import { SubscribeMixin } from "../../mixins/subscribe-mixin";
 import type { HomeAssistant } from "../../types";
 import "../lovelace/components/hui-marquee";
 import { BrowserMediaPlayer } from "./browser-media-player";
+import {
+  getFavoriteStations,
+  addFavoriteStation,
+  removeFavoriteStation,
+} from "../../data/radio_browser";
 
 declare global {
   interface HASSDomEvents {
     "player-picked": { entityId: string };
+    "random-station-requested": undefined;
   }
 }
 
@@ -79,6 +88,12 @@ export class BarMediaPlayer extends SubscribeMixin(LitElement) {
   @state() private _newMediaExpected = false;
 
   @state() private _browserPlayer?: BrowserMediaPlayer;
+
+  @state() private _isFavorite = false;
+
+  @state() private _favoriteBusy = false;
+
+  private _lastRadioStationUuid?: string;
 
   private _volumeValue = 0;
 
@@ -104,6 +119,63 @@ export class BarMediaPlayer extends SubscribeMixin(LitElement) {
       this._volumeValue = value;
     },
   });
+
+  private get _radioStationUuid(): string | undefined {
+    const mediaId =
+      this.entityId === BROWSER_PLAYER
+        ? this._browserPlayer?.item.media_content_id
+        : this._stateObj?.attributes.media_content_id;
+    const prefix = "media-source://radio_browser/";
+    if (!mediaId?.startsWith(prefix)) {
+      return undefined;
+    }
+    return mediaId.slice(prefix.length) || undefined;
+  }
+
+  private async _toggleFavorite(): Promise<void> {
+    const uuid = this._radioStationUuid;
+    if (!uuid || this._favoriteBusy) {
+      return;
+    }
+    this._favoriteBusy = true;
+    try {
+      const { favorites } = await getFavoriteStations(this.hass);
+      const isFavorite = favorites.some((station) => station.uuid === uuid);
+      if (isFavorite) {
+        await removeFavoriteStation(this.hass, uuid);
+      } else {
+        await addFavoriteStation(this.hass, uuid);
+      }
+      if (this._radioStationUuid === uuid) {
+        this._isFavorite = !isFavorite;
+      }
+    } catch {
+      showAlertDialog(this, {
+        text: this.hass.localize("ui.common.unknown_error"),
+      });
+    } finally {
+      this._favoriteBusy = false;
+    }
+  }
+
+  private async _updateFavoriteState(): Promise<void> {
+    const uuid = this._radioStationUuid;
+    this._isFavorite = false;
+    if (!uuid) {
+      return;
+    }
+    try {
+      const { favorites } = await getFavoriteStations(this.hass);
+
+      if (this._radioStationUuid === uuid) {
+        this._isFavorite = favorites.some((station) => station.uuid === uuid);
+      }
+    } catch {
+      showAlertDialog(this, {
+        text: this.hass.localize("ui.common.unknown_error"),
+      });
+    }
+  }
 
   public disconnectedCallback(): void {
     super.disconnectedCallback();
@@ -248,6 +320,20 @@ export class BarMediaPlayer extends SubscribeMixin(LitElement) {
             ? html`<ha-spinner></ha-spinner> `
             : html`
                 <div class="controls">
+                  <ha-icon-button
+                    .path=${this._isFavorite ? mdiHeart : mdiHeartOutline}
+                    .label=${
+                      this._isFavorite ? "Remove favorite" : "Add to favorites"
+                    }
+                    aria-pressed=${this._isFavorite ? "true" : "false"}
+                    @click=${this._toggleFavorite}
+                    ?disabled=${!this._radioStationUuid || this._favoriteBusy}
+                  ></ha-icon-button>
+                  <ha-icon-button
+                    .path=${mdiShuffle}
+                    .label=${this.hass.localize("ui.card.media_player.shuffle")}
+                    @click=${this._handleRandomClick}
+                  ></ha-icon-button>
                   ${
                     controls === undefined
                       ? ""
@@ -326,8 +412,8 @@ export class BarMediaPlayer extends SubscribeMixin(LitElement) {
   ) {
     const isBrowser = this.entityId === BROWSER_PLAYER;
     return html`
-    <div class="choose-player ${isBrowser ? "browser" : ""}">
-      ${
+      <div class="choose-player ${isBrowser ? "browser" : ""}">
+        ${
         !this.narrow &&
         stateObj &&
         supportsFeature(stateObj, MediaPlayerEntityFeature.VOLUME_SET)
@@ -362,14 +448,14 @@ export class BarMediaPlayer extends SubscribeMixin(LitElement) {
           : ""
       }
 
-          <ha-media-player-picker
-            class="player-menu"
-            .value=${this.entityId}
-            @value-changed=${this._handlePlayerSelect}
-          >
-            <ha-button slot="field">
-              <span slot="start">${this._renderIcon(isBrowser, stateObj)}</span>
-              ${
+        <ha-media-player-picker
+          class="player-menu"
+          .value=${this.entityId}
+          @value-changed=${this._handlePlayerSelect}
+        >
+          <ha-button slot="field">
+            <span slot="start">${this._renderIcon(isBrowser, stateObj)}</span>
+            ${
                 isBrowser
                   ? this.hass.localize(
                       "ui.components.media-browser.web-browser"
@@ -391,12 +477,10 @@ export class BarMediaPlayer extends SubscribeMixin(LitElement) {
                       })()
                     : this.entityId
               }
-              <ha-svg-icon slot="end" .path=${mdiChevronDown}></ha-svg-icon>
-            </ha-button>
-          </ha-media-player-picker>
-        </div>
+            <ha-svg-icon slot="end" .path=${mdiChevronDown}></ha-svg-icon>
+          </ha-button>
+        </ha-media-player-picker>
       </div>
-
     `;
   }
 
@@ -435,7 +519,11 @@ export class BarMediaPlayer extends SubscribeMixin(LitElement) {
 
   protected updated(changedProps: PropertyValues) {
     super.updated(changedProps);
-
+    const uuid = this._radioStationUuid;
+    if (uuid !== this._lastRadioStationUuid) {
+      this._lastRadioStationUuid = uuid;
+      void this._updateFavoriteState();
+    }
     if (this.entityId === BROWSER_PLAYER) {
       if (!changedProps.has("_browserPlayer")) {
         return;
@@ -446,13 +534,10 @@ export class BarMediaPlayer extends SubscribeMixin(LitElement) {
         return;
       }
     }
-
     const stateObj = this._stateObj;
-
     if (this.entityId === BROWSER_PLAYER) {
       this._updateVolumeValueFromState(stateObj);
     }
-
     this._syncVolumeSlider();
   }
 
@@ -545,6 +630,10 @@ export class BarMediaPlayer extends SubscribeMixin(LitElement) {
     if (this._marqueeActive) {
       this._marqueeActive = false;
     }
+  }
+
+  private _handleRandomClick(): void {
+    fireEvent(this, "random-station-requested");
   }
 
   private _handlePlayerSelect(ev: HASSDomEvent<{ value: string }>): void {
