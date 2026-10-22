@@ -52,7 +52,9 @@ describe("hui-todo-list-card pending deletes", () => {
     const commit = vi.spyOn(el, "_commitDelete").mockResolvedValue(undefined);
     const row = document.createElement("div");
     row.style.display = "none";
-    el._pendingDeletes = new Map([["uid-1", { timer: 1, row }]]);
+    el._pendingDeletes = new Map([
+      ["uid-1", { timer: 1, rows: [row], uids: ["uid-1"] }],
+    ]);
 
     el._undoDelete("uid-1");
 
