@@ -80,7 +80,7 @@ const UNDO_DELAY = 4000;
 export class HuiTodoListCard extends LitElement implements LovelaceCard {
   private _pendingDeletes = new Map<
     string,
-    { timer: number; rows: HTMLElement[]; uids: string[] }
+    { timer: number; rows?: HTMLElement[]; uids: string[] }
   >();
 
   public static async getConfigElement(): Promise<LovelaceCardEditor> {
@@ -959,12 +959,12 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     }
     const uid = item.uid;
     const uids = this._getItemAndDescendantUids([uid]);
-    const deletedUids = new Set(uids);
-    const rows = Array.from(
-      this._list?.querySelectorAll<HTMLElement>("ha-check-list-item") ?? []
-    ).filter((row) =>
-      deletedUids.has((row as HTMLElement & { itemId: string }).itemId)
-    );
+    const clickedRow = (ev.currentTarget as HTMLElement).closest?.(
+      "ha-check-list-item"
+    ) as HTMLElement | null;
+    const rows = [
+      ...new Set([...this._getRows(uids), ...(clickedRow ? [clickedRow] : [])]),
+    ];
     for (const row of rows) {
       row.style.display = "none";
     }
@@ -989,8 +989,12 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     }
     clearTimeout(pending.timer);
     this._pendingDeletes.delete(uid);
-    for (const row of pending.rows) {
-      row.style.display = "";
+    this._showRows(pending);
+  }
+
+  private _showRows(pending: { rows?: HTMLElement[]; uids: string[] }): void {
+    for (const row of this._getPendingDeleteRows(pending)) {
+      row.style.removeProperty("display");
     }
   }
 
@@ -1003,10 +1007,28 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     try {
       await deleteItems(this.hass!, this._entityId!, [uid]);
     } catch (_err) {
-      for (const row of pending.rows) {
+      for (const row of this._getPendingDeleteRows(pending)) {
         row.style.display = "";
       }
     }
+  }
+
+  private _getPendingDeleteRows(pending: {
+    rows?: HTMLElement[];
+    uids: string[];
+  }): HTMLElement[] {
+    return [
+      ...new Set([...(pending.rows ?? []), ...this._getRows(pending.uids)]),
+    ];
+  }
+
+  private _getRows(uids: string[]): HTMLElement[] {
+    const deletedUids = new Set(uids);
+    return Array.from(
+      this._list?.querySelectorAll<HTMLElement>("ha-check-list-item") ?? []
+    ).filter((row) =>
+      deletedUids.has((row as HTMLElement & { itemId: string }).itemId)
+    );
   }
 
   private _addKeyPress(ev): void {
