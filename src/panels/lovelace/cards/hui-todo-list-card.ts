@@ -1001,7 +1001,7 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     }
     this._pendingDeletes.delete(uid);
     try {
-      await deleteItems(this.hass!, this._entityId!, pending.uids);
+      await deleteItems(this.hass!, this._entityId!, [uid]);
     } catch (_err) {
       for (const row of pending.rows) {
         row.style.display = "";
