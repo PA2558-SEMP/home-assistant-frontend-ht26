@@ -1,12 +1,14 @@
 import { CheckListItemBase } from "@material/mwc-list/mwc-check-list-item-base";
 import { styles as controlStyles } from "@material/mwc-list/mwc-control-list-item.css";
 import { styles } from "@material/mwc-list/mwc-list-item.css";
+import { mdiDrag } from "@mdi/js";
 import { css, html, nothing } from "lit";
 import { customElement, property } from "lit/decorators";
 import { fireEvent } from "../common/dom/fire_event";
 import { preventDefault } from "../common/dom/prevent_default";
 import { stopPropagation } from "../common/dom/stop_propagation";
 import "./ha-checkbox";
+import "./ha-svg-icon";
 
 @customElement("ha-check-list-item")
 export class HaCheckListItem extends CheckListItemBase {
@@ -18,6 +20,12 @@ export class HaCheckListItem extends CheckListItemBase {
 
   @property({ type: Boolean, attribute: "separate-checkbox-click" })
   separateCheckboxClick = false;
+
+  @property({ type: Boolean, attribute: "show-drag-and-drop" })
+  showDragAndDrop = false;
+
+  @property({ type: String, attribute: "drag-and-drop-alt-text" })
+  dragAndDropAltText = "";
 
   async onChange(event) {
     event.stopPropagation();
@@ -34,7 +42,7 @@ export class HaCheckListItem extends CheckListItemBase {
     const meta = this.hasMeta && this.left ? this.renderMeta() : nothing;
     const ripple = this.renderRipple();
 
-    return html` ${ripple} ${graphic} ${this.left ? "" : text}
+    const checkboxWithTextAndMeta = html`${this.left ? "" : text}
       <ha-checkbox
         tabindex=${this.separateCheckboxClick ? this.tabindex : -1}
         .checked=${this.selected}
@@ -46,6 +54,19 @@ export class HaCheckListItem extends CheckListItemBase {
       >
       </ha-checkbox>
       ${this.left ? text : ""} ${meta}`;
+
+    if (this.showDragAndDrop) {
+      return html`${ripple} ${graphic}
+        <ha-svg-icon
+          .title=${this.dragAndDropAltText}
+          class="reorderButton handle"
+          .path=${mdiDrag}
+          slot="meta"
+        >
+        </ha-svg-icon>
+        ${checkboxWithTextAndMeta}`;
+    }
+    return html`${ripple} ${graphic} ${checkboxWithTextAndMeta}`;
   }
 
   static override styles = [

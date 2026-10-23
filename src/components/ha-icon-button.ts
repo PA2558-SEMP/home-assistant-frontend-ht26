@@ -90,6 +90,7 @@ export class HaIconButton extends LitElement {
       background-color: currentColor;
       opacity: 0;
       pointer-events: none;
+      margin: var(--ha-icon-button-after-margin, 0);
     }
     ha-button::part(base) {
       width: var(--wa-form-control-height);

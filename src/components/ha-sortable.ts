@@ -11,6 +11,16 @@ declare global {
     "item-moved": {
       oldIndex: number;
       newIndex: number;
+      deltaX?: number;
+    };
+    "item-dragged": {
+      oldIndex: number;
+      newIndex: number;
+      deltaX: number;
+    };
+    "item-dragging": {
+      item: HTMLElement;
+      deltaX: number;
     };
     "item-added": {
       index: number;
@@ -33,6 +43,11 @@ export type HaSortableOptions = Omit<
 @customElement("ha-sortable")
 export class HaSortable extends LitElement {
   private _sortable?: SortableInstance;
+  private _draggedItem?: HTMLElement;
+
+  // conserve the horizontal position of the mouse when dragging, to be able to calculate the deltaX when moving an item. This is useful for horizontal lists, where the newIndex can be the same as the oldIndex, but the item has moved horizontally.
+  private _dragStartX?: number;
+  private _dragEndX?: number;
 
   @property({ type: Boolean })
   public disabled = false;
@@ -79,6 +94,9 @@ export class HaSortable extends LitElement {
   private _shouldBeDestroy = false;
 
   public disconnectedCallback() {
+    this.removeEventListener("pointerdown", this._handlePointerDown);
+    window.removeEventListener("pointermove", this._handlePointerMove);
+    window.removeEventListener("pointerup", this._handlePointerUp, true);
     super.disconnectedCallback();
     this._shouldBeDestroy = true;
     setTimeout(() => {
@@ -90,6 +108,7 @@ export class HaSortable extends LitElement {
   }
 
   public connectedCallback() {
+    this.addEventListener("pointerdown", this._handlePointerDown);
     super.connectedCallback();
     this._shouldBeDestroy = false;
     if (this.hasUpdated && !this.disabled) {
@@ -171,10 +190,19 @@ export class HaSortable extends LitElement {
   }
 
   private _handleUpdate = (evt) => {
+    const deltaX =
+      this._dragStartX !== undefined && this._dragEndX !== undefined
+        ? this._dragEndX - this._dragStartX
+        : 0;
+    // Fire an event with the new and old index of the moved item, and the deltaX of the mouse movement
     fireEvent(this, "item-moved", {
       newIndex: evt.newIndex,
       oldIndex: evt.oldIndex,
+      deltaX,
     });
+
+    this._dragStartX = undefined;
+    this._dragEndX = undefined;
   };
 
   private _handleAdd = (evt) => {
@@ -190,6 +218,21 @@ export class HaSortable extends LitElement {
   };
 
   private _handleEnd = async (evt) => {
+    window.removeEventListener("pointermove", this._handlePointerMove);
+    if (
+      evt.oldIndex === evt.newIndex &&
+      this._dragStartX !== undefined &&
+      this._dragEndX !== undefined
+    ) {
+      fireEvent(this, "item-dragged", {
+        oldIndex: evt.oldIndex,
+        newIndex: evt.newIndex,
+        deltaX: this._dragEndX - this._dragStartX,
+      });
+    }
+    this._dragStartX = undefined;
+    this._dragEndX = undefined;
+    this._draggedItem = undefined;
     fireEvent(this, "drag-end");
     // put back in original location
     if (this.rollback && (evt.item as any).placeholder) {
@@ -198,7 +241,9 @@ export class HaSortable extends LitElement {
     }
   };
 
-  private _handleStart = () => {
+  private _handleStart = (evt: SortableEvent) => {
+    this._draggedItem = evt.item as HTMLElement;
+    window.addEventListener("pointermove", this._handlePointerMove);
     fireEvent(this, "drag-start");
   };
 
@@ -213,6 +258,28 @@ export class HaSortable extends LitElement {
     this._sortable.destroy();
     this._sortable = undefined;
   }
+
+  private _handlePointerDown = (ev: PointerEvent) => {
+    this._dragStartX = ev.clientX;
+    // Listen for pointerup to get the final position of the mouse when dragging,
+    // to be able to calculate the deltaX when moving an item
+    window.addEventListener("pointerup", this._handlePointerUp, {
+      once: true,
+      capture: true,
+    });
+  };
+
+  private _handlePointerUp = (ev: PointerEvent) => {
+    this._dragEndX = ev.clientX;
+  };
+
+  private _handlePointerMove = (ev: PointerEvent) => {
+    if (this._dragStartX === undefined || !this._draggedItem) return;
+    fireEvent(this, "item-dragging", {
+      item: this._draggedItem,
+      deltaX: ev.clientX - this._dragStartX,
+    });
+  };
 }
 
 declare global {
